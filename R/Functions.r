@@ -1,0 +1,113 @@
+
+### 2.2 Functions
+
+#### 2.2.1 Function for Plotting a Histogram of a Categorical Variable (stat = "identity")
+
+### HistCat:
+### librería: ggplot2 
+### objetivo: ver gráfico de barras de la variable categórica
+
+HistCat <- function(data, var1, var2, texto_x, texto_y, texto_title) {
+
+  ggplot(data, aes(x = {{ var1 }}, y = {{ var2 }})) +
+    geom_bar(color = "darkgreen", fill = "aquamarine", stat = "identity") +
+    geom_text(aes(label = {{ var2 }}), vjust = 2, colour = "black") +
+    xlab(texto_x) +
+    ylab(texto_y) +
+    ggtitle(texto_title) +
+    theme_classic() +
+    theme(
+      axis.text.x = element_text(angle = 45, vjust = 0.75),
+      axis.text = element_text(size = 8),
+      axis.title = element_text(size = 9, face = "bold"),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      plot.title = element_text(hjust = 0.5, size = 11, face = "bold")
+    )
+}
+
+
+#### 2.2.2 Function for Plotting a Histogram of a Categorical Variable (stat = count).
+
+
+### HistCat2:
+### librería: ggplot2 
+### objetivo: ver gráfico de barras de la variable categórica
+
+HistCat2 <-function(data, var1, texto_x,texto_y,texto_title){
+
+  ggplot(data, aes(x =var1)) +
+  geom_bar(color = "darkgreen", fill = "aquamarine", stat="count") +
+  xlab(texto_x) +
+  ylab(texto_y) +
+  ggtitle(texto_title) + 
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle=90,vjust = 0.8),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 9, face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    plot.title = element_text(hjust = 0.5,size = 11,face = "bold")
+  )
+}
+
+
+#### 2.2.1 Function for Plotting a grouped  Histogram 
+
+
+### HistGrup:
+### librería: ggplot2 
+### objetivo: ver gráfico de barras agrupado
+
+HistGrup <-function(data, var_x, var_y, var_fill, Titulo, texto_x,texto_y,texto_z){
+
+ ggplot(data, aes(as.character(var_x), var_y, fill = var_fill)) +
+     geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+     geom_text(aes(label = round(var_y,2)), position = position_dodge(width = 0.9),
+               vjust = -0.3, colour = "black", size=3) +
+     ggtitle(Titulo) +
+              theme(plot.title = element_text(hjust = 0.5)) +
+              labs(x = texto_x, y = texto_y) +
+               guides(fill = guide_legend(title = texto_z))
+}      
+
+
+
+#### 2.2.4 Function for Visualizing Data Distributions
+
+
+### GrafDist:
+### librería: ggplot2 
+### objetivo: ver el gráfico de distribución de una variable continua
+
+GrafDist <-function(data, var1, Titulo, texto_x,texto_y){
+
+  ggplot(data, aes(x = var1)) +
+          geom_density(color = 4,fill = 4,alpha = 0.25) + 
+          ggtitle(Titulo) +
+          theme(plot.title = element_text(hjust = 0.5)) +
+          labs(x = texto_x, y = texto_y)
+}
+
+
+#### 2.2.5 Function for Plotting boxplots
+
+
+### BoxGraph:
+### librería: ggplot2 
+### objetivo: representar boxplot
+
+BoxGraph <-function(data, var1, var2, titulo,texto_x,texto_y){
+
+    box <- boxplot(data[[var1]] ~ data[[var2]], 
+                      main= titulo,
+                      xlab = texto_x,
+                      ylab = texto_y,
+                      col = "aquamarine",
+                      border ="black",
+                      notch =TRUE) 
+  return(box)
+}  
+
+

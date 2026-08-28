@@ -1,0 +1,2126 @@
+---
+title: "main.rmd"
+author: "MariaArranz"
+date: "2026-08-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## 0. INTRODUCTION
+
+## 1. GOAL
+
+The objective is to predict which passengers survived the Titanic disaster. To achieve this, we use a dataframe containing information about each passenger.
+
+## 2. LIBRARIES AND FUNCTIONS
+
+
+### 2.1 Libraries
+
+```{r, warning=FALSE, message=FALSE}
+library(readr)
+library(ggplot2)
+library(stringr)
+library(skimr)
+library(data.table) 
+library(writexl) 
+library(readxl) 
+library(dplyr)
+library(readr)
+library(inspectdf)
+library(stringr)
+library(funModeling)
+library(corrplot)
+library(fitdistrplus)
+library(vars)
+library(PerformanceAnalytics)
+library(vcd)
+library(psych)
+library(lme4)
+library(Matrix)
+library (caret)
+library(MASS)
+library(glmnet)  #implementing lasso and ridge
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(GGally)
+library (corrplot)
+library(DescTools)
+library(vcd)      #Visualizing Categorical Data
+library(pROC)     #ROC curve
+```
+
+
+### 2.2 Sources
+
+```{r}
+
+source("R/Functions.r" , echo = TRUE)
+source("R/Data.r" ,      echo = TRUE)
+source("R/Preprocess.r", echo = TRUE)
+#source("R/RandomForest.Rmd")
+```
+
+
+## 3. EXPLORATORY DATA ANALYSIS (EDA)
+
+
+### 3.2 Analyse the Training Data
+
+
+```{r , results="hide", include=FALSE}
+str (df_train)
+```
+
+```{r, results="hide", include=FALSE}
+summary(df_train)
+```
+
+```{r}
+skim(df_train)
+```
+
+
+##### 3.2.1 Survived
+
+The proportion of passengers who survived is 38.4%
+
+```{r}
+
+df_train$Survived <- factor(
+    df_train$Survived,
+    levels = c(1, 0),
+    labels = c("Si", "No")
+    )
+```
+
+
+
+```{r}
+table(df_train$Survived)
+round(prop.table(table(df_train$Survived)) * 100,2)
+```
+
+
+
+##### 3.2.2 PassangerId
+
+It is the unique identifier assigned to each passenger. We verify that no identifier is duplicated.
+
+```{r}
+length(unique(df_train$PassengerId))
+```
+
+
+##### 3.2.3 Pclass
+
+
+We convert this variable into a categorical variable with three levels: 1, 2, and 3. Class 3 is the largest group, representing more than half of the passengers.
+
+```{r}
+length(unique(df_train$Pclass))
+```
+```{r}
+df_train$Pclass <- as.factor (df_train$Pclass)
+levels(df_train$Pclass)
+```
+
+```{r}
+Titanic_class <-df_train %>%
+                  group_by(Pclass) %>%
+                  summarise(total = n())
+Titanic_class
+
+
+```
+
+```{r}
+
+Total_passenger = nrow(df_train)
+
+Titanic_class_surv <- df_train %>%
+  group_by(Pclass, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_class_surv
+```
+
+
+##### 3.2.4 Name
+
+We analyze the Name variable by splitting it into three components: first name, surname, and title.
+
+```{r}
+summary(df_train$Name)
+```
+
+##### a) Surnames
+
+The dataset contains 667 unique surnames. The most common surname is Andersson, shared by 9 passengers.
+
+```{r}
+df_train$Surname <- sub(",.*", "", df_train$Name)
+
+```
+
+```{r}
+length(unique(df_train$Surname))
+```
+```{r}
+Titanic_surname <-df_train %>% 
+  group_by(Surname) %>% 
+  summarise(total = n())
+
+Titanic_surname <- arrange(Titanic_surname, desc(total))
+Titanic_surname
+summary(Titanic_surname$total)
+```
+
+
+##### b) Title
+
+We extract the title of each passenger. The five most common titles are Mr, Miss, Mrs, Master, and Other. 
+There are also less common titles, such as Dr, Rev, Col, Major which are grouped into a single category called Rare.
+
+
+
+```{r}
+df_train$Title <- sub("^.*,\\s*([^.]+)\\..*$", "\\1", df_train$Name)
+```
+
+```{r}
+length(unique(df_train$Title))
+
+```
+```{r}
+Titanic_Title <-df_train %>% 
+  group_by(Title) %>% 
+  summarise(total = n())
+
+Titanic_Title <- arrange(Titanic_Title, desc(total))
+Titanic_Title
+summary(Titanic_Title$total)
+
+
+```
+
+
+```{r}
+df_train$Title [ df_train$Title %in% c("Mlle", "Ms")] <- "Miss"
+df_train$Title [ df_train$Title %in% c("Mme")] <- "Mrs"
+
+```
+
+
+
+```{r}
+df_train$Title [ df_train$Title %in% c("Dr","Rev","Col","Major","Capt",
+  "Don", "Jonkheer", "Lady","Sir","the Countess", "Dona")] <- "Rare"
+```
+
+```{r}
+Titanic_Title <-df_train %>% 
+  group_by(Title) %>% 
+  summarise(total = n())
+
+Titanic_Title <- arrange(Titanic_Title, desc(total))
+Titanic_Title
+summary(Titanic_Title$total)
+```
+
+We analyze the survival rate by passenger title. The highest survival rates are observed for the titles Mrs and Miss, with approximately 80% and 70% of passengers surviving, respectively. Passengers with the title Master also have a relatively high survival rate of about 57%. In contrast, passengers with the title Mr have the highest mortality rate, with approximately 84% not surviving.
+
+```{r}
+
+Total_passenger = nrow(df_train)
+
+Titanic_title_surv <- df_train %>%
+  group_by(Title, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_title_surv
+```
+
+
+
+##### 3.2.5 Sex
+
+```{r}
+df_train$Sex <- as.factor (df_train$Sex)
+levels(df_train$Sex)
+```
+
+```{r}
+
+Titanic_sex <-df_train %>% 
+  group_by(Sex) %>% 
+  summarise(total = n())
+
+Titanic_sex
+```
+
+We analyze the survival rate by sex. The survival rate for women is much higher than for men: about 74% of women survived, compared with only 18% of men.
+
+
+```{r}
+Total_passenger = nrow(df_train)
+
+Titanic_sex_surv <- df_train %>%
+  group_by(Sex, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_sex_surv
+```
+
+
+##### 3.2.6 Age
+
+We observed a large number of missing values (NA) in the Age variable. To impute these missing values, we calculated the mean age for each group defined by passenger class, title, and sex, and used these group-specific mean values to fill in the missing ages.
+
+```{r}
+summary (df_train$Age)
+```
+
+```{r}
+
+Titanic_Age_NA <- df_train %>% filter(is.na(Age))
+
+```
+
+
+```{r}
+Total_passenger = nrow(df_train)
+
+Titanic_Age_mean <- df_train %>%
+  group_by(Title) %>%
+  summarise(max = round(max(Age, na.rm = TRUE),0),
+            media = round(mean(Age, na.rm = TRUE),0), 
+            min = round(min(Age, na.rm = TRUE),0), .groups = "drop")
+
+Titanic_Age_mean
+```
+
+
+```{r}
+
+df_train <- df_train %>%
+  mutate(Age = case_when(
+    is.na(Age) & (Title == "Master") & (Pclass == 1) ~ 1,
+    is.na(Age) & (Title == "Master") & (Pclass == 2) ~ 2,
+    is.na(Age) & (Title == "Master") & (Pclass == 3) ~ 5,
+    is.na(Age) & (Title == "Miss") & (Pclass == 1) ~ 29,
+    is.na(Age) & (Title == "Miss") & (Pclass == 2) ~ 23,
+    is.na(Age) & (Title == "Miss") & (Pclass == 3) ~ 16,
+    is.na(Age) & (Title == "Mr")   & (Pclass == 1) ~ 41,
+    is.na(Age) & (Title == "Mr")   & (Pclass == 2) ~ 33,
+    is.na(Age) & (Title == "Mr")   & (Pclass == 3) ~ 28,
+    is.na(Age) & (Title == "Mrs")  & (Pclass == 1) ~ 40,
+    is.na(Age) & (Title == "Mrs")  & (Pclass == 2) ~ 35,
+    is.na(Age) & (Title == "Mrs")  & (Pclass == 3) ~ 33,
+    is.na(Age) & (Title == "Rare") & (Pclass == 1) ~ 46,
+    is.na(Age) & (Title == "Rare") & (Pclass == 2) ~ 41,
+    TRUE ~ Age 
+  ))
+
+```
+
+###### 3.2.6.1 Relation Age vs Sex
+
+```{r}
+summary (df_train$Age)
+```
+```{r}
+
+texto_x ="Age"
+texto_y = "Men"
+Titulo = "Men's distibution vs Age"
+
+
+Edad_men <- df_train %>%
+  dplyr::filter(Sex == "male") %>%
+  dplyr::select(Age)
+
+ggplot(Edad_men, aes(x = Age)) +
+  geom_density(fill = "steelblue",alpha = 0.5) +
+  ggtitle(Titulo) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x = texto_x, y = texto_y)
+
+
+```
+```{r}
+
+texto_x ="Age"
+texto_y = "Women"
+Titulo = "Women's distibution vs Age"
+
+
+Edad_women <- df_train %>%
+  dplyr::filter(Sex == "female") %>%
+  dplyr::select(Age)
+
+
+ggplot(Edad_women, aes(x = Age)) +
+  geom_density(fill = "steelblue",alpha = 0.5) +
+  ggtitle(Titulo) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x = texto_x, y = texto_y)
+
+
+
+```
+```{r}
+
+texto_x ="Age"
+texto_y = "Men"
+Titulo = "Men's distibution vs Age"
+
+
+Edad_men <- df_train %>%
+  dplyr::filter(Sex == "male") %>%
+  dplyr::select(Age, Survived)
+
+
+
+ggplot(Edad_men, aes(x = Age)) +
+  geom_density(aes(fill = Survived),alpha = 0.5 ) +
+  ggtitle(Titulo) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x = texto_x, y = texto_y )
+  
+```
+
+
+```{r}
+
+texto_x ="Age"
+texto_y = "Women"
+Titulo = "Women's distibution vs Age"
+
+
+Edad_women <- df_train %>%
+  dplyr::filter(Sex == "female") %>%
+  dplyr::select(Age, Survived)
+
+
+
+ggplot(Edad_women, aes(x = Age)) +
+  geom_density(aes(fill = Survived),alpha = 0.5 ) +
+  ggtitle(Titulo) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x = texto_x, y = texto_y )
+  
+```
+
+
+```{r}
+summary(Edad_women)
+summary(Edad_men)
+```
+###### 3.2.6.2 Relation Age vs Title
+
+
+```{r}
+
+texto_x ="Age"
+texto_y = "Title"
+Titulo = "Title's distibution vs Age"
+
+
+Age_Title <- df_train %>%
+  dplyr::select(Age, Title)
+
+
+
+ggplot(Age_Title, aes(x =Age)) +
+  geom_density(aes(fill = Title),alpha = 0.5 ) +
+  ggtitle(Titulo) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x = texto_x, y = texto_y )
+  
+
+```
+
+
+##### 3.2.7 Siblings or Spouses aboard the Titanic
+
+
+```{r}
+summary (df_train$SibSp)
+```
+
+```{r}
+texto_x ="number of siblings o spouses"
+texto_y ="number of passangers"
+texto_title ="Number of passengers with Siblings or Spouses"
+
+HistCat2 (df_train, 
+          as.factor (df_train$SibSp), 
+          texto_x,texto_y,texto_title)
+```
+
+We analyze the survival rate by number of siblings or spouses.
+
+
+```{r}
+
+
+Titanic_sib_surv <- df_train %>%
+  group_by(SibSp, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_sib_surv
+```
+
+
+
+##### 3.2.8 Number of parents / children aboard the Titanic
+
+```{r}
+summary (df_train$Parch)
+```
+
+
+```{r}
+texto_x ="number of Parents and Childs"
+texto_y ="number of passangers"
+texto_title ="Number of passengers with Parents and Childs"
+
+HistCat2 (df_train, 
+          as.factor (df_train$Parch), 
+          texto_x,texto_y,texto_title)
+```
+
+We analyze the survival rate by number of parents and childs.
+
+
+```{r}
+
+
+Titanic_parch_surv <- df_train %>%
+  group_by(Parch, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_parch_surv
+```
+
+
+##### 3.2.9 Number of family members or alone
+
+```{r}
+df_train$Family <- df_train$SibSp + df_train$Parch
+summary(df_train$Family)
+```
+
+
+```{r}
+texto_x ="number of family's members"
+texto_y ="number of passangers"
+texto_title ="Number of family's members"
+
+HistCat2 (df_train, 
+          as.factor (df_train$Family), 
+          texto_x,texto_y,texto_title)
+```
+
+We analyze the survival rate by number of family's members.
+
+
+```{r}
+
+
+Titanic_family_surv <- df_train %>%
+  group_by(Family, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_family_surv
+```
+
+```{r}
+df_family <- data.frame(Number_members = Titanic_family_surv$Family, 
+                        Passengers     = Titanic_family_surv$total, 
+                        grupo = Titanic_family_surv$Survived)
+
+ggplot(df_family, aes(Number_members, Passengers , fill = grupo)) +
+geom_bar(stat = "identity") +
+scale_x_continuous( breaks =
+                      seq(floor(min(df_family$Number_members)),
+                      ceiling(max(df_family$Number_members)), by = 1)) +  
+ggtitle("Survived vs Family's member")+
+theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold")) +
+guides(fill = guide_legend(title = "Survived"))
+
+
+
+
+```
+Using the results we change number_members to 7 if the value is over 7. 
+
+```{r}
+df_train$Family <- ifelse(
+  df_train$Family >= 7,
+  7,
+  df_train$Family
+)
+```
+
+
+
+##### 3.2.9 Ticket
+
+```{r}
+summary(df_train$Ticket)
+```
+
+
+```{r}
+length(unique(df_train$Ticket))
+```
+
+```{r}
+Titanic_ticket <-df_train %>% 
+  group_by(Ticket) %>% 
+  summarise(total = n())
+
+Titanic_ticket
+```
+```{r}
+Titanic_ticket <- arrange(Titanic_ticket, desc(total))
+Titanic_ticket
+
+```
+
+
+##### 3.2.10 Fare
+
+```{r}
+summary (df_train$Fare)
+```
+
+
+```{r}
+ggplot(data = df_train, aes(x = 1, y = Fare)) +
+  geom_boxplot() +
+  scale_x_continuous(breaks = NULL) + # Oculta la etiqueta del eje X
+  labs(x = "", y = "Tu variable")
+```
+
+```{r}
+boxplot(df_train$Fare, main="Boxplot con valores atípicos", ylab="Valores", col="lightblue")
+```
+```{r}
+estadisticas <- boxplot.stats(df_train$Fare)
+
+# Imprimir los resultados
+print(estadisticas)
+```
+
+```{r}
+df_train$LogFare <- log1p(df_train$Fare)
+```
+
+
+```{r}
+
+texto_x ="$"
+texto_y = "log1p(Fare)"
+Titulo = "log1p(Fare)"
+
+  ggplot(df_train, aes(x =LogFare)) +
+          geom_density(color = 4,fill = 4,alpha = 0.25) + 
+          ggtitle(Titulo) +
+          theme(plot.title = element_text(hjust = 0.5)) +
+          labs(x = texto_x, y = texto_y)
+```
+
+##### 3.2.11 Cabin
+
+```{r}
+summary (df_train$Cabin)
+```
+
+```{r}
+
+sin_cabina = sum(!nzchar(df_train$Cabin))
+sin_cabina
+
+```
+```{r}
+df_train$CabinL <- substr(df_train$Cabin,1,1)
+
+df_train$CabinL <- ifelse(
+  df_train$CabinL == "",
+  "Z",
+  df_train$CabinL
+)
+
+
+```
+
+```{r}
+Titanic_cabin <-df_train %>% 
+  group_by(CabinL) %>% 
+  summarise(total = n())
+
+Titanic_cabin
+```
+
+
+```{r}
+
+Total_passenger = nrow(df_train)
+
+Titanic_cabin_survived <-df_train %>% 
+  group_by(CabinL,Survived) %>% 
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_cabin_survived
+
+
+Titanic_class_surv <- df_train %>%
+  group_by(Pclass, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_class_surv
+```
+
+```{r}
+df_cabin <- data.frame(Cabin = Titanic_cabin_survived$CabinL, 
+                       Passengers = Titanic_cabin_survived$total, 
+                        grupo = Titanic_cabin_survived$Survived)
+
+ggplot(df_cabin, aes(Cabin, Passengers , fill = grupo)) +
+geom_bar(stat = "identity") +
+ggtitle("Survived vs Cabin")+
+theme(plot.title = element_text(hjust = 0.5, size = 18, face = "bold")) +
+guides(fill = guide_legend(title = "Survived"))
+
+```
+
+
+
+
+##### 3.2.12 Embarked
+
+Port of Embarkation	C = Cherbourg, Q = Queenstown, S = Southampton
+
+```{r}
+summary (as.factor(df_train$Embarked))
+```
+
+
+```{r}
+texto_x ="Ports Embarked"
+texto_y ="Number of passangers"
+texto_title ="Number of passengers in each Port"
+
+HistCat2 (df_train, 
+          as.factor (df_train$Embarked), 
+          texto_x,texto_y,texto_title)
+```
+
+We assign the NA value to port S = Southampton, the main port
+
+
+```{r}
+df_train <- df_train %>%
+  mutate(
+    Embarked = if_else(Embarked == "", "S", Embarked)
+  )
+```
+
+
+```{r}
+summary (as.factor(df_train$Embarked))
+```
+
+
+We analyze the survival rate by the ports embarked
+
+```{r}
+
+
+Titanic_port_surv <- df_train %>%
+  group_by(Embarked, Survived) %>%
+  summarise(total = n(), .groups = "drop_last") %>%
+  mutate(perc_class = total / sum(total) * 100) %>%
+  ungroup() %>%
+  mutate(perc_total = total / sum(total) * 100)
+
+Titanic_port_surv
+```
+
+
+```{r}
+rm(Titanic_Age_mean,Titanic_Age_NA,Titanic_cabin,Titanic_cabin_survived,
+   Titanic_class, Titanic_class_surv, Titanic_family_surv,
+   Titanic_parch_surv,Titanic_port_surv, Titanic_sex_surv,Titanic_sex,
+   Titanic_sib_surv,Titanic_surname,Titanic_ticket,
+   Titanic_Title,Titanic_title_surv, Edad_men,Edad_women,estadisticas)
+```
+
+
+
+## 4. VARIABLE SELECTION
+
+For this study, we removed the variables PassengerId, Name, Ticket, Cabin, CabinL, and Surname, as they do not provide useful information for predicting whether a passenger survived. 
+
+```{r}
+df_train2 <- df_train %>% 
+                dplyr::select(-PassengerId, -Name, -Ticket, -Cabin,-Surname)
+```
+
+### 4.1 Correlation plot 
+
+The following plots depict the relationships between the variables. Different colors are used to distinguish between passengers who survived and those who did not, allowing us to compare the two groups.
+
+```{r}
+ggpairs(df_train2,                 # Data frame
+        columns = 2:11,             # Columnas
+        aes(color = Survived,      # Color por grupo (var. categórica)
+            alpha = 0.5))          # Transparencia
+
+```
+
+
+
+
+### 4.2 Zero Variance
+
+We analyzed the variance of each variable. Variables with a variance close to zero provide little information and are therefore unlikely to be useful for the analysis.
+
+
+
+
+```{r}
+numeric_cols <- sapply(df_train2,is.numeric)
+df_train_num <- df_train2[,numeric_cols]
+varianza <- nearZeroVar (df_train_num,saveMetrics = T)
+varianza
+```
+
+
+### 4.3 Correlation plot (numeric variables)
+
+The correlation between the numerical variables is not high. Therefore, all of them can be included in the model.
+
+```{r}
+
+
+matriz_corr <- cor(df_train_num)
+corrplot.mixed(matriz_corr, lower = "circle", upper = "number")
+```
+
+
+```{r}
+cor(df_train_num, use = "complete.obs")
+```
+
+### 4.4 Correlation plot (categoric variables)
+
+To study the association between categorical variables, we used Cramér's V. A strong association was found between Sex and Title, since titles are closely related to a passenger's sex. Therefore, including both variables in the model may introduce redundant information. We decided to use Title because it provides more information than Sex, as it also reflects aspects such as social status and, in some cases, age.
+
+```{r}
+
+
+sex_pclass <-  round(CramerV(df_train2$Sex, df_train$Pclass),3)
+sex_emb    <-  round(CramerV(df_train2$Sex, df_train$Embarked),3)
+sex_title  <-  round(CramerV(df_train2$Sex, df_train$Title),3)
+sex_cabinL  <- round(CramerV(df_train2$Sex, df_train$CabinL),3)
+emb_title  <-  round(CramerV(df_train2$Embarked, df_train$Title),3)
+emb_pclass <-  round(CramerV(df_train2$Embarked, df_train$Pclass),3)
+emb_cabinL  <- round(CramerV(df_train2$Embarked, df_train$CabinL),3)
+
+sex_pclass
+sex_emb
+sex_title
+sex_cabinL
+emb_title
+emb_pclass
+emb_cabinL
+
+```
+
+
+
+## 5.PREPARING DATA FOR TRAINING AND TESTING
+
+This function prepare the data for training and testing (df_train and df_test)
+
+```{r}
+
+data_model <- preprocess(df_train)
+df_train2 <- data_model
+
+df_train2 <- df_train2 %>% 
+                dplyr::select(-PassengerId)
+  
+```
+
+```{r}
+data_model <- preprocess(df_test)
+df_test2 <- data_model
+
+df_test2 <- df_test2 %>% 
+                dplyr::select(-PassengerId)
+  
+```
+
+We create the train control to use the same data in each model
+
+```{r}
+
+
+set.seed(101)
+
+folds <- createFolds(
+    df_train2$Survived,
+    k = 10,
+    returnTrain = TRUE
+    )
+
+tr_Control <- trainControl(
+    method = "cv",
+    number = 10,
+    index = folds,
+    classProbs = TRUE,
+    summaryFunction = twoClassSummary
+)
+```
+
+
+## 6 GLM - Logistic Regression
+
+We analyze different regression using the most important variables
+
+
+### 6.1 GLM Model 1
+
+```{r}
+ 
+
+set.seed(101)
+
+  model_glm_reg1 <- train(
+    Survived ~ Pclass +  Age  + Title + Family + Embarked + LogFare , 
+    data      = df_train2, 
+    method    = "glm",
+    family    = "binomial", 
+    metric    = "ROC", 
+    preProc   = c("center", "scale"), 
+    trControl = tr_Control,
+    na.action = na.exclude  #para evitar error por na
+  )
+ 
+ max_roc_model1 <- max(model_glm_reg1$results$ROC)
+
+
+```
+
+
+```{r}
+summary(model_glm_reg1)
+```
+
+```{r}
+round(exp(coef(model_glm_reg1$finalModel)),2)
+```
+
+
+
+
+```{r}
+plot(varImp(model_glm_reg1))
+```
+
+After evaluating the importance of the characteristics, we selected the most informative ones for the analysis.
+
+
+
+### 6.2 GLM Model 2
+
+
+```{r}
+
+set.seed(101)
+
+  model_glm_reg2 <- train(
+    Survived ~ Pclass +  Age  + LogFare + Embarked + Title + Family , 
+    data      = df_train2, 
+    method    = "glm",
+    family    = "binomial", 
+    metric    = "ROC", 
+    preProc   = c("center", "scale"), 
+    trControl = tr_Control,
+    na.action = na.exclude  #para evitar error por na
+  )
+ 
+  max_roc_model2 <- max(model_glm_reg2$results$ROC)
+  
+ 
+```
+
+```{r}
+summary(model_glm_reg2)
+```
+
+
+```{r}
+plot(varImp(model_glm_reg2))
+```
+
+### 6.3 Saving the best models 
+
+
+We save two models. The first with all the variables and the second with the selected ones.
+
+
+```{r}
+
+
+name_file <- "model_glm_reg1.RDS"
+root_file <- paste0("Outputs/",name_file)
+root_file
+saveRDS(model_glm_reg1, root_file)
+
+
+name_file <- "model_glm_reg2.RDS"
+root_file <- paste0("Outputs/",name_file)
+root_file
+saveRDS(model_glm_reg2, root_file)
+
+
+```
+### 6.4 Testing the models 
+
+In this section, we apply the model for testing data
+
+```{r}
+model_glm_reg1     <- readRDS("Outputs/model_glm_reg1.rds")
+model_glm_reg2     <- readRDS("Outputs/model_glm_reg2.rds")
+```
+
+
+### 6.4.1 Model glm1
+```{r warning=FALSE}
+ggplot(melt(model_glm_reg1$resample[,-4]),
+       aes(x = variable, y = value, fill= variable)) + 
+       geom_boxplot(show.legend = FALSE) +
+       xlab(NULL) + ylab(NULL)
+```
+
+```{r}
+model_glm_reg1
+
+```
+
+
+```{r}
+df_test2$Porcentaje <-predict(model_glm_reg1,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_glm_reg1,df_test2,type="raw")
+
+```
+
+
+
+```{r}
+
+confusion_matrix <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observations", "predictions"))
+confusion_matrix
+```
+
+```{r}
+mosaic(confusion_matrix, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+
+```{r}
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Decision Tree"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+
+```{r}
+
+area_model_glm1 <- auc(roc_obj)
+area_model_glm1
+```
+
+### 6.4.2 Model glm2
+
+```{r warning=FALSE}
+ggplot(melt(model_glm_reg2$resample[,-4]),
+       aes(x = variable, y = value, fill= variable)) + 
+       geom_boxplot(show.legend = FALSE) +
+       xlab(NULL) + ylab(NULL)
+```
+
+```{r}
+model_glm_reg2
+
+```
+
+
+```{r}
+df_test2$Porcentaje <-predict(model_glm_reg2,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_glm_reg2,df_test2,type="raw")
+
+```
+
+
+
+```{r}
+
+confusion_matrix <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observations", "predictions"))
+confusion_matrix
+```
+
+```{r}
+mosaic(confusion_matrix, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+
+```{r}
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Decision Tree"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+
+```{r}
+
+area_model_glm2 <- auc(roc_obj)
+area_model_glm2
+```
+
+
+
+
+## 7. DECISION TREE
+
+### 7.1 Decision Tree Model
+
+The data were modeled using a decission tree implemented with the **rpart** function from CARET package. In order to obtain the best ROC value we optimized several model parameters:
+
+- cp (complexity parameter, CARET parameter): we tested values using an expanded grid. This parameter controls the minimum improvement to make a new split. If the value is too low can lead to complex tree and increase the risk of overfitting. 
+
+- control minbucket (RPART PARAMETER): the mininum number of observations that must be present in a terminal node (leaf). 
+
+- minsplit: this parameter specifies the minimum numbre of observations required in a node to be considered for splitting.
+
+- maxdepth (RPART PARAMETER): this parameter controls the maximum depth of the tree, limiting the number of levels that the tree can have.
+
+
+
+
+
+```{r}
+
+resultados <- data.frame(
+  minbucket = numeric(12),
+  maxdepth = numeric(12),
+  cp = numeric(12),
+  ROC = numeric(12),
+  Sens = numeric(12),
+  Spec = numeric(12)
+)
+
+set.seed(101)
+
+#tuneGrid <- expand.grid(cp=seq(0.005,0.05, by = 0.005))
+tuneGrid <- expand.grid(cp=seq(0.005,0.05, by = 0.005))
+
+fila <- 1
+
+for (minbucket in c(15, 20, 25, 30)) {
+  
+  for (maxdepth in c(2, 3, 4)) {
+    
+    model_tree <- train(
+      Survived ~ .,
+      data = df_train2,
+      method = "rpart",
+      metric = "ROC",
+      trControl = tr_Control,
+      control = rpart.control(
+        minbucket = minbucket,
+        maxdepth = maxdepth
+      ),
+      tuneGrid = tuneGrid
+    )
+    
+    resultados[fila, "minbucket"] <- minbucket
+    resultados[fila, "maxdepth"] <- maxdepth
+    
+    mejor <- model_tree$results[
+       which.max(model_tree$results$ROC),
+    ]
+    
+    resultados[fila, "cp"] <- mejor$cp
+    resultados[fila, "ROC"] <- mejor$ROC
+    resultados[fila, "Sens"]<- mejor$Sens
+    resultados[fila, "Spec"]<- mejor$Spec
+    
+    fila <- fila + 1
+  }
+}
+
+```
+
+
+### 6.2 Saving the best models 
+
+
+The best parameters are selected. In this study the best ROC values and Sensibility values:
+- minbucket = 15 depth = 3  cp= 0.005
+- minbucket = 15 depth = 4
+
+
+```{r}
+
+set.seed(101)
+
+tuneGrid <- data.frame(
+  cp = 0.005
+)
+
+  model_tree <- train(
+      Survived ~ .,
+      data = df_train2,
+      method = "rpart",
+      metric = "ROC",
+      trControl = tr_Control,
+      control = rpart.control(
+        minbucket = 15,
+        maxdepth =3
+      ),
+      tuneGrid = tuneGrid
+    )
+ 
+   mejor <- model_tree$results[
+       which.max(model_tree$results$ROC),
+    ]   
+   
+```
+
+
+```{r}
+minbucket <- model_tree$dots$control$minbucket
+max_depth <- model_tree$dots$control$maxdepth
+#cp        <- model_tree$dots$control$cp 
+
+
+name_file <- paste0("model_tree_","buck",minbucket,"_depth",max_depth,".rds")
+root_file <- paste0("Outputs/",name_file)
+root_file
+saveRDS(model_tree, root_file)
+```
+```{r}
+
+set.seed(101)
+tuneGrid <- data.frame(
+  cp = 0.005
+)
+
+  model_tree <- train(
+      Survived ~ .,
+      data = df_train2,
+      method = "rpart",
+      metric = "ROC",
+      trControl = tr_Control,
+      control = rpart.control(
+        minbucket = 15,
+        maxdepth =4
+      ),
+      tuneGrid = tuneGrid
+    )
+ 
+   mejor <- model_tree$results[
+       which.max(model_tree$results$ROC),
+    ]   
+   
+```
+
+
+```{r}
+minbucket <- model_tree$dots$control$minbucket
+max_depth <- model_tree$dots$control$maxdepth
+#cp        <- model_tree$dots$control$cp 
+
+
+name_file <- paste0("model_tree_","buck",minbucket,"_depth",max_depth,".rds")
+root_file <- paste0("Outputs/",name_file)
+root_file
+saveRDS(model_tree, root_file)
+```
+
+
+
+
+### 6.3 Testing the models 
+
+In this section, we apply the model for testing data
+
+```{r}
+model_tree_15_3     <- readRDS("Outputs/model_tree_buck15_depth3.rds")
+model_tree_15_4     <- readRDS("Outputs/model_tree_buck15_depth4.rds")
+```
+
+
+### 6.3.1 Model tree (minbucket =15, depth=3)
+```{r warning=FALSE}
+ggplot(melt(model_tree_20_3$resample[,-4]),
+       aes(x = variable, y = value, fill= variable)) + 
+       geom_boxplot(show.legend = FALSE) +
+       xlab(NULL) + ylab(NULL)
+```
+
+```{r}
+model_tree_15_3
+rpart.plot(model_tree_15_3$finalModel)
+
+```
+
+
+```{r}
+df_test2$Porcentaje <-predict(model_tree_20_3,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_tree_20_3,df_test2,type="raw")
+
+```
+
+
+
+```{r}
+
+confusion_matrix <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observations", "predictions"))
+confusion_matrix
+```
+
+```{r}
+mosaic(confusion_matrix, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+
+```{r}
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Decision Tree"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+
+```{r}
+
+area_model_tree1 <- auc(roc_obj)
+area_model_tree1
+```
+
+### 6.3.2 Model tree (minbucket =15, depth=4)
+
+```{r warning=FALSE}
+ggplot(melt(model_tree_15_4$resample[,-4]),
+       aes(x = variable, y = value, fill= variable)) + 
+       geom_boxplot(show.legend = FALSE) +
+       xlab(NULL) + ylab(NULL)
+```
+
+
+```{r}
+model_tree_15_4
+rpart.plot(model_tree_15_4$finalModel)
+
+```
+
+
+```{r}
+df_test2$Porcentaje <-predict(model_tree_15_4,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_tree_15_4,df_test2,type="raw")
+
+```
+
+
+
+```{r}
+
+confusion_matrix <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observations", "predictions"))
+confusion_matrix
+```
+
+
+```{r}
+mosaic(confusion_matrix, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+```{r}
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Decision Tree"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+
+
+```{r}
+
+area_model_tree2 <- auc(roc_obj)
+area_model_tree2
+```
+
+## 7 RANDOM FOREST
+
+### 7.1 Random Forest Model
+
+The data were modeled using a Random Forest implemented with the **rf** function from CARET package. In order to obtain the best ROC value we optimized the parameter mtry:
+
+mtry: The number of variables randomly selected as candidates for each split in the tree. In a classification problem, the default value is approximately the square root of the total number of variables.
+
+ntree: number of trees used (usually around 500 is ok!)
+
+```{r }
+
+  set.seed(101)
+ 
+  tune_grid = expand.grid( 
+    mtry          = 2:4 
+  )
+
+  model_rf <- train(
+    Survived ~ Pclass +  Age  + Title + Family + Embarked + LogFare ,
+    data      = df_train2,
+    method    = "rf",
+    metric    = "ROC",
+    ntree     = 500,
+    trControl = tr_Control,
+    tuneGrid  = tune_grid
+   )
+      
+ 
+```
+
+
+```{r }
+model_rf
+plot(varImp(model_rf))
+```
+
+
+### 7.2 Saving the best models 
+
+
+The mtry value is 4
+
+
+```{r}
+model_rf$finalModel
+```
+
+
+```{r}
+
+mtry <- model_rf$finalModel$mtry
+
+name_file <- paste0("model_rf_","mtry",mtry,".rds")
+root_file <- paste0("Outputs/",name_file)
+root_file
+saveRDS(model_rf, root_file)
+```
+
+### 7.3 Testing the model
+
+In this section, we apply the model for testing data
+
+```{r}
+model_rf_mtry4     <- readRDS("Outputs/model_rf_mtry4.rds")
+```
+
+
+```{r}
+df_test2$Porcentaje <-predict(model_rf_mtry4,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_rf_mtry4,df_test2,type="raw")
+
+```
+
+
+
+```{r}
+
+confusion_matrix <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observations", "predictions"))
+confusion_matrix
+```
+
+```{r}
+mosaic(confusion_matrix, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+```{r}
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Decision Tree"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+```{r}
+
+area_model_tree <- auc(roc_obj)
+area_model_tree
+```
+
+## 8 BAGGING
+
+### 8.1 Bagging Model
+
+The data were modeled using a Bagging Model implemented with the **treebag** function from CARET package. 
+
+
+```{r}
+set.seed(101)
+
+
+results_bag <- data.frame(
+  bag  = numeric(4),
+  ROC  = numeric(4),
+  Sens = numeric(4),
+  Spec = numeric(4)
+)
+
+
+fila <- 1
+
+for (num_bag in c(50,100,200,500)) {
+  
+   model_bag <- train(
+    Survived ~ Pclass +  Age  + Title + Family + Embarked + Fare ,
+    data      = df_train2,
+    method    = "treebag",
+    metric    = "ROC",
+    trControl = tr_Control,
+    nbagg = num_bag
+   )
+    
+    results_bag[fila, "num_bag"] <- num_bag
+    results_bag[fila, "ROC"] <- model_bag$results$ROC
+    results_bag[fila, "Sens"] <- model_bag$results$Sens
+    results_bag[fila, "Spec"] <- model_bag$results$Spec
+    
+    fila <- fila + 1
+}
+
+
+```
+
+
+
+### 8.2 Saving the best model 
+
+
+```{r}
+set.seed(101)
+  model_bag <- train(
+    Survived ~ .,
+    data      = df_train2,
+    method    = "treebag",
+    metric    = "ROC",
+    trControl = tr_Control,
+    nbagg = 500
+   )
+  
+    
+```
+
+
+
+```{r}
+model_bag$results$ROC
+```
+
+
+```{r}
+nbagg <- model_bag$dots$nbagg
+
+
+name_file <- paste0("model_bagg_","nbagg",nbagg,".rds")
+root_file <- paste0("Outputs/",name_file)
+root_file
+saveRDS(model_bag, root_file)
+```
+
+### 8.3 Testing the model
+
+In this section, we apply the model for testing data
+
+```{r}
+model_bag     <- readRDS("Outputs/model_bagg_nbagg500.rds")
+```
+
+
+```{r}
+df_test2$Porcentaje <-predict(model_bag,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_bag,df_test2,type="raw")
+
+```
+
+
+
+```{r}
+
+confusion_matrix <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observations", "predictions"))
+confusion_matrix
+```
+
+```{r}
+mosaic(confusion_matrix, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+```{r}
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Bagging Model"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+```{r}
+
+area_model_bag <- auc(roc_obj)
+area_model_bag
+```
+
+## 9 GRADIENT BOOSTING
+
+### 9.1 Gradient Boosting
+
+The data were modeled using a Gradient Boosting Model implemented with the **gbm** function from CARET package. 
+
+n.trees: Total number of trees (boosting iterations) to build. More trees reduce training error, but too many can cause overfitting.
+
+interaction.depth: Maximum depth of each tree (number of splits). A depth of 1 builds an additive model (stumps), while higher values capture variable interactions. Usually between 3 - 8
+
+shrinkage: Learning rate applied to each tree. Controls how much each tree contributes; smaller values require more trees but often improve generalization.
+
+n.minobsinnode: Minimum number of data observations required in the terminal (leaf) nodes. Prevents overfitting on small subsets of data. The value predeterminate is 0.1 and it gives good results. Usually between 5-15
+
+
+```{r}
+
+set.seed(101) 
+
+  gbmGrid <- expand.grid(
+    n.trees           = c(75,100,125,150,175),
+    interaction.depth = c(2,4,6,8), 
+    shrinkage         = 0.1, 
+    n.minobsinnode    = c(5,10,15,20)
+  )
+
+  
+ 
+ model_gbm <- train( 
+    Survived ~ Pclass +  Age  + Title + Family + Embarked + Fare , 
+    data      = df_train2, 
+    method    = "gbm", 
+    metric    = "ROC",  
+    preProc   = c("center", "scale"),
+    trControl = tr_Control,   
+    tuneGrid  = gbmGrid,
+    verbose   = FALSE
+    
+  )
+```
+
+
+```{r}
+#model_gbm
+```
+
+
+```{r}
+model_gbm_best <- model_gbm$results[
+       which.max(model_gbm$results$ROC),
+    ]   
+
+model_gbm_best
+```
+
+
+```{r}
+
+ggplot(melt(model_gbm$resample[,-4]),
+       aes(x = variable, y = value, fill= variable)) + 
+       geom_boxplot(show.legend = FALSE) +
+       xlab(NULL) + ylab(NULL)
+
+```
+
+
+
+
+
+
+### 9.2 Saving the best model 
+
+
+```{r}
+
+
+  gbmGrid <- expand.grid(
+    n.trees           = 150,
+    interaction.depth = 6, 
+    shrinkage         = 0.1, 
+    n.minobsinnode    = 20
+  )
+
+ set.seed(101)  
+ 
+ model_gbm_best <- train( 
+    Survived ~Pclass +  Age  + Title + Family + Embarked + Fare, 
+    data      = df_train2, 
+    method    = "gbm", 
+    metric    = "ROC",  
+    preProc   = c("center", "scale"),
+    trControl = tr_Control,   
+    tuneGrid  = gbmGrid,
+    verbose   = FALSE
+    
+  )
+        
+
+```
+
+
+
+```{r}
+shrink <- model_gbm_best$bestTune$shrinkage
+ntrees <- model_gbm_best$bestTune$n.trees
+depth  <- model_gbm_best$bestTune$interaction.depth
+node   <- model_gbm_best$bestTune$n.minobsinnode
+
+
+name_file <- paste0("model_gbm_","ntrees",
+                    ntrees,"_depth",depth,"_node",node,".rds")
+root_file <- paste0("Outputs/",name_file)
+root_file
+saveRDS(model_gbm_best, root_file)
+```
+
+### 9.3 Testing the model
+
+In this section, we apply the model for testing data
+
+```{r}
+model_gbm    <- readRDS("Outputs/model_gbm_ntrees150_depth6_node20.rds")
+```
+
+
+```{r}
+df_test2$Porcentaje <-predict(model_gbm,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_gbm,df_test2,type="raw")
+
+```
+
+
+
+```{r}
+
+confusion_matrix <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observations", "predictions"))
+confusion_matrix
+```
+
+```{r}
+mosaic(confusion_matrix, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+```{r}
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Bagging Model"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+```{r}
+
+area_model_gbm <- auc(roc_obj)
+area_model_gbm
+```
+
+
+
+
+
+
+
+
+
+
+
+
+## 10 COMPARING AUC VALUES
+
+
+```{r}
+
+paste0 ("AUC_model_glm1 = ",round(area_model_glm1,4))
+paste0 ("AUC_model_glm2 = ",round(area_model_glm2,4))
+paste0 ("AUC_model_tree1 = ",round(area_model_tree1,4))
+paste0("AUC_model_tree2 = ",round(area_model_tree2,4))
+paste0("AUC_model_bag = ",round(area_model_bag,4))
+paste0("AUC_model_gbm = ",round(area_model_gbm,4))
+
+```
+
+
+## 11. PREDICTION
+
+```{r}
+
+data_model <- preprocess(df_submit)
+df_submit2 <- data_model
+
+```
+
+
+```{r}
+nrow(df_test2)
+nrow(df_submit2)
+colSums(is.na(df_submit2))
+```
+Data_frame to save all predictions
+
+```{r}
+df_submit_prediction <- df_submit
+df_submit_probability <- df_submit
+```
+
+### 11.1 Glm1
+
+
+```{r}
+
+df_submit2$Survived <-predict(model_glm_reg1,df_submit2,type="prob")
+df_submit2$Survived <-predict(model_glm_reg1,df_submit2,type="raw")
+
+df_submit_probability$Survived_Tree1 <-predict(model_glm_reg1,df_submit2,type="prob")
+df_submit_prediction$Survived_Tree1 <-predict(model_glm_reg1,df_submit2,type="raw")
+
+
+```
+
+
+
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Outputs/Titanic_submission_glm1.csv", row.names = FALSE)
+```
+
+### 11.2 Glm2
+
+
+```{r}
+
+df_submit2$Survived <-predict(model_glm_reg2,df_submit2,type="prob")
+df_submit2$Survived <-predict(model_glm_reg2,df_submit2,type="raw")
+
+df_submit_probability$Survived_Tree1 <-predict(model_glm_reg2,df_submit2,type="prob")
+df_submit_prediction$Survived_Tree1 <-predict(model_glm_reg2,df_submit2,type="raw")
+
+
+```
+
+
+
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Outputs/Titanic_submission_glm2.csv", row.names = FALSE)
+```
+
+
+
+
+### 11.1 Decission Tree (15,3)
+
+
+```{r}
+
+df_submit2$Survived <-predict(model_tree_15_3,df_submit2,type="prob")
+df_submit2$Survived <-predict(model_tree_15_3,df_submit2,type="raw")
+
+df_submit_probability$Survived_Tree1 <-predict(model_tree_15_3,df_submit2,type="prob")
+df_submit_prediction$Survived_Tree1 <-predict(model_tree_15_3,df_submit2,type="raw")
+
+
+```
+
+
+
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Outputs/Titanic_submission_tree_15_3.csv", row.names = FALSE)
+```
+
+
+### 11.2 Decission Tree (15,4)
+
+
+```{r}
+
+df_submit2$Survived <-predict(model_tree_15_4,df_submit2,type="prob")
+df_submit2$Survived <-predict(model_tree_15_4,df_submit2,type="raw")
+
+df_submit_probability$Survived_Tree2 <-predict(model_tree_15_4,df_submit2,type="prob")
+df_submit_prediction$Survived_Tree2 <-predict(model_tree_15_4,df_submit2,type="raw")
+
+
+```
+
+
+
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Outputs/Titanic_submission_tree_15_4.csv", row.names = FALSE)
+```
+
+
+### 11.3 Random Forest
+
+
+```{r}
+
+df_submit2$Survived <-predict(model_rf_mtry4,df_submit2,type="prob")
+df_submit2$Survived <-predict(model_rf_mtry4,df_submit2,type="raw")
+
+df_submit_probability$Survived_RF <-predict(model_rf_mtry4,df_submit2,type="prob")
+df_submit_prediction$Survived_RF <-predict(model_rf_mtry4,df_submit2,type="raw")
+
+
+```
+
+
+
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Outputs/Titanic_submission_RF.csv", row.names = FALSE)
+```
+
+
+
+
+
+### 11.4 Bagging
+
+
+```{r}
+
+df_submit2$Survived <-predict(model_bag,df_submit2,type="prob")
+df_submit2$Survived <-predict(model_bag,df_submit2,type="raw")
+
+df_submit_probability$Survived_Bag <-predict(model_bag,df_submit2,type="prob")
+df_submit_prediction$Survived_Bag <-predict(model_bag,df_submit2,type="raw")
+
+
+```
+
+
+
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Outputs/Titanic_submission_Bag.csv", row.names = FALSE)
+```
+
+
+
+
+
+
+### 11.5 Gradient Boosting
+
+
+```{r}
+
+df_submit2$Survived <-predict(model_gbm,df_submit2,type="prob")
+df_submit2$Survived <-predict(model_gbm,df_submit2,type="raw")
+
+df_submit_probability$Survived_gbm <-predict(model_gbm,df_submit2,type="prob")
+df_submit_prediction$Survived_gbm <-predict(model_gbm,df_submit2,type="raw")
+
+
+```
+
+
+
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Outputs/Titanic_submission_Gbm.csv", row.names = FALSE)
+```
+

@@ -1,0 +1,179 @@
+
+
+## 4.PREPARING DATA
+
+### 4.1 Preparing the data testing (preprocess con survived)
+
+
+preprocess <- function(data){
+  
+  data_model <- data
+  
+  #1. variable Survived
+  if ( "Survived" %in% names(data_model)){
+    if (!is.factor(data_model$Survived)) {
+      data_model$Survived <- factor(data_model$Survived,
+                                    levels = c(1, 0),
+                                    labels = c("Si", "No"))
+    }
+  }
+  
+  #2. variable Pclass
+  if (!is.factor(data_model$Pclass)) {
+    data_model$Pclass <- factor(data_model$Pclass)
+  }
+  
+  #3. variable Title
+  data_model$Surname <- sub(",.*", "", data$Name)
+  
+  data_model$Title <- sub("^.*,\\s*([^.]+)\\..*$", "\\1", data$Name)
+  data_model$Title [ data_model$Title %in% c("Mlle", "Ms")] <- "Miss"
+  data_model$Title [ data_model$Title %in% c("Mme")] <- "Mrs"
+  data_model$Title [ data_model$Title %in% c("Dr","Rev","Col","Major","Capt",
+                                             "Don", "Jonkheer", "Lady","Sir","the Countess", "Dona")] <- "Rare"
+  
+  if (!is.factor(data_model$Title)) {
+    data_model$Title <- factor(data_model$Title)
+  }
+  
+  #4. variable Sex
+  if (!is.factor(data_model$Sex)) {
+    data_model$Sex <- factor(data_model$Sex)
+  }
+  
+  #5. variable Age
+  data_model <- data_model %>%
+    mutate(Age = case_when(
+      is.na(Age) & (Title == "Master") & (Pclass == 1) ~ 1,
+      is.na(Age) & (Title == "Master") & (Pclass == 2) ~ 2,
+      is.na(Age) & (Title == "Master") & (Pclass == 3) ~ 5,
+      is.na(Age) & (Title == "Miss") & (Pclass == 1) ~ 29,
+      is.na(Age) & (Title == "Miss") & (Pclass == 2) ~ 23,
+      is.na(Age) & (Title == "Miss") & (Pclass == 3) ~ 16,
+      is.na(Age) & (Title == "Mr")   & (Pclass == 1) ~ 41,
+      is.na(Age) & (Title == "Mr")   & (Pclass == 2) ~ 33,
+      is.na(Age) & (Title == "Mr")   & (Pclass == 3) ~ 28,
+      is.na(Age) & (Title == "Mrs")  & (Pclass == 1) ~ 40,
+      is.na(Age) & (Title == "Mrs")  & (Pclass == 2) ~ 35,
+      is.na(Age) & (Title == "Mrs")  & (Pclass == 3) ~ 33,
+      is.na(Age) & (Title == "Rare") & (Pclass == 1) ~ 46,
+      is.na(Age) & (Title == "Rare") & (Pclass == 2) ~ 41,
+      TRUE ~ Age 
+    ))
+  
+  #6. variable Sibsp and Parch
+  #data_model$SibSp <- df$SibSp
+  #data_model$Parch <- df$Parch
+  
+  #8. variable Family
+  data_model$Family <- data_model$SibSp + data_model$Parch
+  
+  data_model$Family <- ifelse(
+    data_model$Family >= 7,
+    7,
+    data_model$Family
+  ) 
+  
+  #9. variable Fare
+  data_model <- data_model %>%
+    mutate(Fare = case_when(
+      is.na(Fare) ~ 7.775, TRUE ~ Fare))
+  
+  
+  #10. variable logFare
+  data_model$LogFare <- log1p(data_model$Fare)
+    
+  #11.variable embarked 
+  data_model <- data_model %>%
+    mutate(
+      Embarked = if_else(Embarked == "", "S", Embarked)
+    )
+  
+  data_model$Embarked <- as.factor(data_model$Embarked)
+  
+  data_model$CabinL <- substr(data_model$Cabin,1,1)
+  
+  data_model$CabinL <- ifelse(
+    data_model$CabinL == "",
+    "Z",
+    data_model$CabinL
+  )
+  
+  data_model$CabinL <- as.factor(data_model$CabinL)
+  
+  
+  data_model <- data_model %>% 
+    dplyr::select(-Name, -Ticket, -Cabin,-Surname)
+  
+  return(data_model)
+}
+
+
+
+### 4.2 Preparing the data testing (preprocess2, sin survived) --NO SIRVE
+
+
+
+preprocess2 <- function(data){
+  
+  data_model<- data
+  
+  data_model$PassengerId <- data$PassengerId
+  
+  data_model$Pclass <- as.factor (data$Pclass)
+  
+  data_model$Surname <- sub(",.*", "", data$Name)
+  
+  data_model$Title <- sub("^.*,\\s*([^.]+)\\..*$", "\\1", data_model$Name)
+  data_model$Title [ data_model$Title %in% c("Mlle", "Ms")] <- "Miss"
+  data_model$Title [ data_model$Title %in% c("Mme")] <- "Mrs"
+  data_model$Title [ data_model$Title %in% c("Dr","Rev","Col","Major","Capt",
+  "Don", "Jonkheer", "Lady","Sir","the Countess", "Dona")] <- "Rare"
+  
+  data_model$Title <- as.factor(data_model$Title)
+  
+  data_model$Sex <- as.factor (data$Sex)
+  
+  data_model <- data_model %>%
+    mutate(Age = case_when(
+      is.na(Age) & (Title == "Master") & (Pclass == 1) ~ 1,
+      is.na(Age) & (Title == "Master") & (Pclass == 2) ~ 2,
+      is.na(Age) & (Title == "Master") & (Pclass == 3) ~ 5,
+      is.na(Age) & (Title == "Miss") & (Pclass == 1) ~ 29,
+      is.na(Age) & (Title == "Miss") & (Pclass == 2) ~ 23,
+      is.na(Age) & (Title == "Miss") & (Pclass == 3) ~ 16,
+      is.na(Age) & (Title == "Mr")   & (Pclass == 1) ~ 41,
+      is.na(Age) & (Title == "Mr")   & (Pclass == 2) ~ 33,
+      is.na(Age) & (Title == "Mr")   & (Pclass == 3) ~ 28,
+      is.na(Age) & (Title == "Mrs")  & (Pclass == 1) ~ 40,
+      is.na(Age) & (Title == "Mrs")  & (Pclass == 2) ~ 35,
+      is.na(Age) & (Title == "Mrs")  & (Pclass == 3) ~ 33,
+      is.na(Age) & (Title == "Rare") & (Pclass == 1) ~ 46,
+      is.na(Age) & (Title == "Rare") & (Pclass == 2) ~ 41,
+      TRUE ~ Age 
+    ))
+  
+  data_model$SibSp <- data$SibSp
+  data_model$Parch <- data$Parch
+  
+  data_model$Fare <- data$Fare
+  
+  
+  data_model <- data_model %>%
+    mutate(Fare = case_when(
+      is.na(Fare) ~ 7.775, TRUE ~ Fare))
+      
+  data_model <- data_model %>%
+    mutate(
+      Embarked = if_else(Embarked == "", "S", Embarked)
+  )
+  
+   data_model$Embarked <- as.factor(data_model$Embarked)
+
+  data_model <- data_model %>% 
+                dplyr::select(-Name, -Ticket, -Cabin,-Surname)
+
+  return(data_model)
+}
+
+
