@@ -3,4 +3,5 @@
 .Rproj.user/
 Outputs/
 data/raw/
+data/process
 *.RDS
