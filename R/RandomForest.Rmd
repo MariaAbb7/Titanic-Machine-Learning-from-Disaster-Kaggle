@@ -1,0 +1,164 @@
+## 7 RANDOM FOREST
+
+
+```{r }
+
+
+  set.seed(101)
+ 
+  tune_grid = expand.grid( 
+    mtry          = 3:5 
+  )
+
+  tr_Control <- trainControl(
+    method = "cv",
+    number = 10,
+    classProbs = TRUE,
+    summaryFunction = twoClassSummary
+  )
+
+  model_rf <- train(
+    Survived ~ .,
+    data      = df_train2,
+    method    = "rf",
+    metric    = "ROC",
+    ntree     = 500,
+    trControl = tr_Control,
+    tuneGrid  = tune_grid
+   )
+      
+  
+
+
+```
+
+
+```{r }
+model_rf
+plot(varImp(model_rf))
+```
+
+```{r }
+model_rf$bestTune
+plot(model_rf$bestTune)
+```
+
+
+```{r eval=FALSE, include=FALSE}
+modelo_rf$bestTune
+```
+
+
+## 8. PREDICTION
+
+
+```{r}
+
+data_model <- preprocess(df_test)
+df_test2 <- data_model
+
+df_test2 <- df_test2 %>% 
+                dplyr::select(-PassengerId)
+  
+  
+```
+
+
+
+
+
+
+### 8.2 Prediction Model_tree
+
+```{r}
+df_test2$Porcentaje <-predict(model_tree,df_test2,type="prob")
+df_test2$Prediccion <-predict(model_tree,df_test2,type="raw")
+
+```
+
+```{r}
+names(df_train2)
+names(df_test2)
+```
+
+
+```{r}
+library(vcd)
+
+matriz_confusion <- table(df_test2$Survived, df_test2$Prediccion,
+                          dnn = c("observaciones", "predicciones"))
+matriz_confusion
+```
+
+```{r}
+mosaic(matriz_confusion, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+
+```{r}
+library(pROC)
+
+roc_obj <- roc(
+  response = df_test2$Survived,
+  predictor = df_test2$Porcentaje$Si
+)
+
+
+plot(
+  roc_obj,
+  col = "blue",
+  lwd = 2,
+  main = "ROC Curve - Decision Tree"
+)
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+
+```{r}
+
+area_model_tree <- auc(roc_obj)
+area_model_tree
+```
+
+
+## 9. PREDICTION FINAL
+
+
+```{r}
+
+data_model <- preprocess(df_submit)
+df_submit2 <- data_model
+
+```
+
+
+```{r}
+nrow(df_test2)
+nrow(df_submit2)
+colSums(is.na(df_submit2))
+```
+
+
+```{r}
+
+
+df_submit2$Survived <-predict(model_tree,df_submit2,type="prob")
+
+df_submit2$Survived <-predict(model_tree,df_submit2,type="raw")
+
+```
+
+```{r}
+df_submission <- df_submit2 %>% dplyr::select("PassengerId", "Survived")
+as.character(df_submission$Survived)
+df_submission$Survived <- ifelse(df_submission$Survived == "Si", 1, 0)
+
+```
+
+
+```{r}
+write.csv(df_submission, file = "Titanic_submission_tree.csv", row.names = FALSE)
+```
+

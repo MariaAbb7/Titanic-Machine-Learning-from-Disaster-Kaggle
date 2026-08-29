@@ -1,0 +1,66 @@
+
+## 6.DECISION TREE
+
+
+```{r}
+
+data_model <- preprocess(df_train)
+df_train2 <- data_model
+
+df_train2 <- df_train %>% 
+                dplyr::select(
+                  -PassengerId, 
+                  -Name, 
+                  -Ticket,
+                  -Cabin,
+                  -Surname,
+                  -CabinL)
+  
+```
+
+```{r}
+
+set.seed(101)
+
+tuneGrid <- expand.grid(cp=seq(0.01,0.025,0.05))
+
+tr_Control <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary
+  
+)
+
+model_tree <- train(
+  Survived ~ .,
+  data      = df_train2,
+  method    = "rpart",
+  metric    = "ROC",
+  trControl = tr_Control,
+  control = rpart.control(minbucket =15),
+  tuneGrid  = tuneGrid
+)
+
+
+```
+
+```{r}
+ggplot(melt(model_tree$resample[,-4]),
+       aes(x = variable, y = value, fill= variable)) + 
+       geom_boxplot(show.legend = FALSE) +
+       xlab(NULL) + ylab(NULL)
+```
+
+```{r}
+
+model_tree
+rpart.plot(model_tree$finalModel)
+
+```
+
+```{r}
+formula(model_tree$finalModel)
+```
+
+
